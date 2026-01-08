@@ -1,8 +1,11 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 # RSR-template-repo - RSR Standard Justfile Template
 # https://just.systems/man/en/
 #
 # This is the CANONICAL template for all RSR projects.
 # Copy this file to new projects and customize the {{PLACEHOLDER}} values.
+#
+# IMPORTANT: This file MUST be named "Justfile" (capital J) for RSR compliance.
 #
 # Run `just` to see all available recipes
 # Run `just cookbook` to generate docs/just-cookbook.adoc
@@ -232,25 +235,47 @@ EOF
     echo "Generated: docs/man/{{project}}.1"
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# CONTAINERS (nerdctl + Wolfi)
+# CONTAINERS (nerdctl-first, podman-fallback)
 # ═══════════════════════════════════════════════════════════════════════════════
+
+# Detect container runtime: nerdctl > podman > docker
+[private]
+container-cmd:
+    #!/usr/bin/env bash
+    if command -v nerdctl >/dev/null 2>&1; then
+        echo "nerdctl"
+    elif command -v podman >/dev/null 2>&1; then
+        echo "podman"
+    elif command -v docker >/dev/null 2>&1; then
+        echo "docker"
+    else
+        echo "ERROR: No container runtime found (install nerdctl, podman, or docker)" >&2
+        exit 1
+    fi
 
 # Build container image
 container-build tag="latest":
-    @if [ -f Containerfile ]; then \
-        nerdctl build -t {{project}}:{{tag}} -f Containerfile .; \
-    else \
-        echo "No Containerfile found"; \
+    #!/usr/bin/env bash
+    CTR=$(just container-cmd)
+    if [ -f Containerfile ]; then
+        echo "Building with $CTR..."
+        $CTR build -t {{project}}:{{tag}} -f Containerfile .
+    else
+        echo "No Containerfile found"
     fi
 
 # Run container
 container-run tag="latest" *args:
-    nerdctl run --rm -it {{project}}:{{tag}} {{args}}
+    #!/usr/bin/env bash
+    CTR=$(just container-cmd)
+    $CTR run --rm -it {{project}}:{{tag}} {{args}}
 
 # Push container image
 container-push registry="ghcr.io/hyperpolymath" tag="latest":
-    nerdctl tag {{project}}:{{tag}} {{registry}}/{{project}}:{{tag}}
-    nerdctl push {{registry}}/{{project}}:{{tag}}
+    #!/usr/bin/env bash
+    CTR=$(just container-cmd)
+    $CTR tag {{project}}:{{tag}} {{registry}}/{{project}}:{{tag}}
+    $CTR push {{registry}}/{{project}}:{{tag}}
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # CI & AUTOMATION
@@ -296,7 +321,7 @@ validate-rsr:
     #!/usr/bin/env bash
     echo "=== RSR Compliance Check ==="
     MISSING=""
-    for f in .editorconfig .gitignore justfile RSR_COMPLIANCE.adoc README.adoc; do
+    for f in .editorconfig .gitignore Justfile RSR_COMPLIANCE.adoc README.adoc; do
         [ -f "$f" ] || MISSING="$MISSING $f"
     done
     for d in .well-known; do
